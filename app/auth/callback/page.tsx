@@ -15,7 +15,7 @@ export default function Callback() {
 
       setMsg('¡Listo! Iniciaste sesión.');
 
-      // Checar si ya tiene display_name para decidir a dónde mandar
+      // ¿Ya tiene display_name? -> decide a dónde mandarlo
       const uid = data.session?.user?.id;
       if (!uid) { setMsg('Sesión no encontrada'); return; }
 
