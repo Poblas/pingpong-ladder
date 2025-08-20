@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '../lib/supabaseClient';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 export default function Home() {
   const supabase = getSupabaseClient();
@@ -62,4 +62,3 @@ export default function Home() {
     </main>
   );
 }
-
