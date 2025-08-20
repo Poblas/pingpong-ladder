@@ -12,24 +12,24 @@ export default function Callback() {
   useEffect(() => {
     (async () => {
       // 1. Intercambiar el code por una sesión
-      const { data, error } = await supabase.auth.exchangeCodeForSession({
-        redirectTo: window.location.href
-      });
+      const { data, error } = await supabase.auth.exchangeCodeForSession(
+        window.location.href
+      );
 
       if (error) {
         setMsg(`Error: ${error.message}`);
-        setTimeout(() => router.replace('/'), 1500);
+        setTimeout(() => router.replace('/'), 1200);
         return;
       }
 
       const uid = data.session?.user?.id;
       if (!uid) {
         setMsg('No se encontró la sesión.');
-        setTimeout(() => router.replace('/'), 1500);
+        setTimeout(() => router.replace('/'), 1200);
         return;
       }
 
-      // 2. Verificar que exista perfil
+      // 2. Asegurar que exista fila en Profiles
       const { data: profile } = await supabase
         .from('Profiles')
         .select('user_id, display_name')
@@ -39,18 +39,22 @@ export default function Callback() {
       if (!profile) {
         await supabase.from('Profiles').insert({
           user_id: uid,
-          display_name: null
+          display_name: null,
         });
       }
 
       setMsg('¡Listo! Iniciaste sesión.');
 
+      // 3. Redirigir según si ya tiene display_name o no
       const hasName = !!profile?.display_name;
-      setTimeout(() => {
-        router.replace(hasName ? '/dashboard' : '/onboarding');
-      }, 1000);
+      setTimeout(
+        () => router.replace(hasName ? '/dashboard' : '/onboarding'),
+        700
+      );
     })();
-  }, [router, supabase]);
+  }, [supabase, router]);
 
   return <p style={{ padding: 24 }}>{msg}</p>;
+}
+}}>{msg}</p>;
 }
