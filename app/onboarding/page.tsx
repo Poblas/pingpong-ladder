@@ -1,80 +1,92 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { getSupabaseClient } from '@/lib/supabaseClient';
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function Onboarding() {
-  const supabase = getSupabaseClient();
+  const [name, setName] = useState("");
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const [email, setEmail] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState('');
-  const [checking, setChecking] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      const u = data.session?.user;
-      if (!u) { router.replace('/'); return; }
-      setEmail(u.email ?? null);
-      const { data: prof, error } = await supabase
-        .from('profiles')
-        .select('display_name')
-        .eq('user_id', u.id)
-        .maybeSingle();
-      if (!error && prof?.display_name) {
-        router.replace('/dashboard');
-      } else {
-        setChecking(false);
-      }
-    })();
-  }, []);
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMsg("");
 
-  async function save() {
-    setError(null);
-    const name = displayName.trim();
-    if (name.length < 3) { setError('Elige un nombre de al menos 3 caracteres.'); return; }
+    // Obtener usuario actual
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-    setSaving(true);
-    const { data: sess } = await supabase.auth.getSession();
-    const uid = sess.session?.user?.id;
-    if (!uid) { setError('Sesión no encontrada'); setSaving(false); return; }
+    if (userError || !user) {
+      setMsg("Error: no se pudo identificar el usuario.");
+      setLoading(false);
+      return;
+    }
 
-    const { data: clash } = await supabase
-      .from('profiles')
-      .select('user_id')
-      .eq('display_name', name)
+    // Validar que el username sea único
+    const { data: existing, error: checkError } = await supabase
+      .from("Profiles")
+      .select("*")
+      .eq("display_name", name)
       .maybeSingle();
-    if (clash) { setError('Ese nombre ya está en uso.'); setSaving(false); return; }
 
-    const { error } = await supabase
-      .from('profiles')
+    if (checkError) {
+      setMsg("Error validando el nombre.");
+      setLoading(false);
+      return;
+    }
+
+    if (existing) {
+      setMsg("Ese nombre ya está en uso.");
+      setLoading(false);
+      return;
+    }
+
+    // Guardar el nombre en su perfil
+    const { error: updateError } = await supabase
+      .from("Profiles")
       .update({ display_name: name })
-      .eq('user_id', uid);
+      .eq("user_id", user.id);
 
-    setSaving(false);
-    if (error) setError(error.message);
-    else router.replace('/dashboard');
-  }
+    if (updateError) {
+      setMsg("Error guardando el nombre.");
+      setLoading(false);
+      return;
+    }
 
-  if (checking) return <p>Cargando…</p>;
+    setMsg("¡Perfil creado!");
+    setTimeout(() => router.replace("/dashboard"), 800);
+  };
 
   return (
-    <main style={{ maxWidth: 520, margin: '0 auto', display: 'grid', gap: 12 }}>
-      <h1>Elige tu nombre de jugador</h1>
-      <p>Correo: <b>{email}</b></p>
-      <input
-        value={displayName}
-        onChange={(e) => setDisplayName(e.target.value)}
-        placeholder="Ej. JuanPong"
-        style={{ padding: 8 }}
-      />
-      <button onClick={save} disabled={saving} style={{ padding: 8 }}>
-        {saving ? 'Guardando…' : 'Guardar y continuar'}
-      </button>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      <small>Podrás cambiarlo después en tu perfil.</small>
-    </main>
+    <div className="flex items-center justify-center h-screen">
+      <form
+        onSubmit={handleSave}
+        className="bg-white p-6 rounded shadow w-80 space-y-4"
+      >
+        <h1 className="text-xl font-bold text-center">Elige tu nombre</h1>
+        <input
+          type="text"
+          placeholder="Tu username"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full border p-2 rounded"
+          required
+        />
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-blue-600 text-white p-2 rounded disabled:opacity-50"
+        >
+          {loading ? "Guardando..." : "Guardar"}
+        </button>
+        {msg && <p className="text-center text-sm">{msg}</p>}
+      </form>
+    </div>
   );
 }
+
