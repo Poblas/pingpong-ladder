@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabaseClient } from '../../lib/supabaseClient';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 export default function Onboarding() {
   const supabase = getSupabaseClient();
