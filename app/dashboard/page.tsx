@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '@/lib/supabaseClient';
+import { getSupabaseClient } from '../../lib/supabaseClient';
 
 export default function Dashboard() {
   const supabase = getSupabaseClient();
