@@ -56,5 +56,3 @@ export default function Callback() {
 
   return <p style={{ padding: 24 }}>{msg}</p>;
 }
-}}>{msg}</p>;
-}
