@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabaseClient } from '../../lib/supabaseClient';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 export default function Callback() {
   const supabase = getSupabaseClient();
@@ -28,10 +28,6 @@ export default function Callback() {
       setTimeout(() => router.replace(hasName ? '/dashboard' : '/onboarding'), 600);
     })();
   }, []);
-
-  return <p>{msg}</p>;
-}
-
 
   return <p>{msg}</p>;
 }
