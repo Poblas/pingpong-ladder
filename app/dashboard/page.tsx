@@ -1,34 +1,63 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '@/lib/supabaseClient';
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+
+type Profile = {
+  id: string;
+  display_name: string;
+  created_at: string;
+};
 
 export default function Dashboard() {
-  const supabase = getSupabaseClient();
-  const [email, setEmail] = useState<string | null>(null);
-  const [name, setName] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      const user = data.session?.user;
-      setEmail(user?.email ?? null);
-      if (user?.id) {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('display_name')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        setName(prof?.display_name ?? null);
+    const fetchProfiles = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("Profiles")
+        .select("id, display_name, created_at")
+        .order("created_at", { ascending: true }); // temporalmente por fecha
+
+      if (!error && data) {
+        setProfiles(data);
       }
-    })();
+      setLoading(false);
+    };
+
+    fetchProfiles();
   }, []);
 
-  if (!email) return <p>Necesitas iniciar sesión.</p>;
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto' }}>
-      <h2>Dashboard</h2>
-      <p>Hola, <b>{name ?? email}</b>.</p>
-      <a href="/onboarding">Cambiar nombre</a>
-    </main>
+    <div className="flex flex-col items-center p-8">
+      <h1 className="text-2xl font-bold mb-6">🏓 Ranking de Jugadores</h1>
+
+      {loading ? (
+        <p>Cargando jugadores...</p>
+      ) : profiles.length === 0 ? (
+        <p>No hay jugadores todavía.</p>
+      ) : (
+        <table className="table-auto border-collapse border border-gray-400 w-full max-w-lg">
+          <thead>
+            <tr className="bg-gray-200">
+              <th className="border border-gray-400 px-4 py-2">Posición</th>
+              <th className="border border-gray-400 px-4 py-2">Jugador</th>
+            </tr>
+          </thead>
+          <tbody>
+            {profiles.map((p, i) => (
+              <tr key={p.id} className="text-center">
+                <td className="border border-gray-400 px-4 py-2">{i + 1}</td>
+                <td className="border border-gray-400 px-4 py-2">
+                  {p.display_name}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
