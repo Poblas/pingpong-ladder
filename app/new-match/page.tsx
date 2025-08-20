@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseClient } from '@/lib/supabaseClient';
+import { calculateEloWithAntiFarm } from '@/lib/elo';
 
-type Player = { id: string; display_name: string };
+type Player = { id: string; display_name: string; rating?: number };
 
 export default function NewMatchPage() {
   const supabase = getSupabaseClient();
@@ -13,8 +14,8 @@ export default function NewMatchPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [me, setMe] = useState<Player | null>(null);
 
-  const [p1, setP1] = useState(''); // jugador 1
-  const [p2, setP2] = useState(''); // jugador 2
+  const [p1, setP1] = useState('');
+  const [p2, setP2] = useState('');
   const [s1, setS1] = useState('7');
   const [s2, setS2] = useState('0');
 
@@ -24,11 +25,9 @@ export default function NewMatchPage() {
 
   useEffect(() => {
     (async () => {
-      // Debe haber sesión
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace('/'); return; }
 
-      // Mi perfil (para preseleccionarme)
       const { data: myProf } = await supabase
         .from('Profiles')
         .select('id, display_name')
@@ -39,10 +38,9 @@ export default function NewMatchPage() {
         setP1((myProf as Player).id);
       }
 
-      // Todos los perfiles
       const { data } = await supabase
         .from('Profiles')
-        .select('id, display_name')
+        .select('id, display_name, rating')
         .order('display_name');
       setPlayers((data ?? []) as Player[]);
       setLoading(false);
@@ -51,7 +49,6 @@ export default function NewMatchPage() {
 
   const haveTwoPlayers = players.length >= 2;
 
-  // El marcador debe ser 7–0..6
   const validScores = useMemo(() => {
     const a = Number(s1), b = Number(s2);
     const isInt = Number.isInteger(a) && Number.isInteger(b);
@@ -67,21 +64,59 @@ export default function NewMatchPage() {
     if (!validScores) { setErr('Marcador inválido. Debe ser 7–0..6.'); return; }
 
     const a = Number(s1), b = Number(s2);
-    const winner = a > b ? p1 : p2;
+    const winnerId = a > b ? p1 : p2;
+    const loserId = a > b ? p2 : p1;
 
     setSaving(true);
-    const { error } = await supabase.from('Matches').insert({
-      player1_id: p1,
-      player2_id: p2,
-      score1: a,
-      score2: b,
-      winner_id: winner,
-    });
-    setSaving(false);
 
-    if (error) { setErr(error.message); return; }
+    try {
+      // ratings actuales
+      const { data: playersData, error: playersErr } = await supabase
+        .from('Profiles')
+        .select('id, rating')
+        .in('id', [winnerId, loserId]);
+      if (playersErr || !playersData) throw new Error(playersErr?.message || 'Error cargando ratings.');
 
-    router.replace('/dashboard'); // El trigger en DB recalcula ELO/Leaderboard
+      const winner = playersData.find(p => p.id === winnerId)!;
+      const loser = playersData.find(p => p.id === loserId)!;
+
+      // historial de hoy contra el mismo rival (para antifarmeo)
+      const { data: sameDayMatches } = await supabase
+        .from('Matches')
+        .select('id, winner_id, loser_id, created_at')
+        .gte('created_at', new Date(new Date().setHours(0,0,0,0)).toISOString())
+        .eq('player1_id', p1)
+        .eq('player2_id', p2);
+
+      const { newWinnerRating, newLoserRating } = calculateEloWithAntiFarm({
+        winnerRating: winner.rating,
+        loserRating: loser.rating,
+        winnerId,
+        loserId,
+        date: new Date(),
+        previousMatches: sameDayMatches ?? []
+      });
+
+      // guardar partido
+      const { error: matchErr } = await supabase.from('Matches').insert({
+        player1_id: p1,
+        player2_id: p2,
+        score1: a,
+        score2: b,
+        winner_id: winnerId,
+      });
+      if (matchErr) throw new Error(matchErr.message);
+
+      // actualizar ratings
+      await supabase.from('Profiles').update({ rating: newWinnerRating }).eq('id', winnerId);
+      await supabase.from('Profiles').update({ rating: newLoserRating }).eq('id', loserId);
+
+      router.replace('/dashboard');
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) return <main style={{ padding: 24 }}>Cargando…</main>;
@@ -94,11 +129,6 @@ export default function NewMatchPage() {
         <div style={{ marginTop: 12 }}>
           <p style={{ color: '#444' }}>
             Necesitas al menos <b>2 jugadores</b> para registrar un partido.
-          </p>
-          <p style={{ marginTop: 8 }}>
-            Opciones:
-            <br />• Pídele a otro jugador que inicie sesión y complete su perfil en <code>/profile-setup</code>.
-            <br />• O agrega un jugador de prueba desde el Table Editor de Supabase en la tabla <code>Profiles</code>.
           </p>
         </div>
       ) : (
@@ -114,11 +144,9 @@ export default function NewMatchPage() {
           <label>Jugador 2</label>
           <select value={p2} onChange={(e) => setP2(e.target.value)}>
             <option value="">— Elegir —</option>
-            {players
-              .filter(pl => pl.id !== p1) // evita elegir el mismo
-              .map(pl => (
-                <option key={pl.id} value={pl.id}>{pl.display_name}</option>
-              ))}
+            {players.filter(pl => pl.id !== p1).map(pl => (
+              <option key={pl.id} value={pl.id}>{pl.display_name}</option>
+            ))}
           </select>
 
           <label>Marcador (a 7)</label>
