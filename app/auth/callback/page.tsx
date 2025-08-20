@@ -15,7 +15,6 @@ export default function Callback() {
 
       setMsg('¡Listo! Iniciaste sesión.');
 
-      // ¿Ya tiene display_name? -> decide a dónde mandarlo
       const uid = data.session?.user?.id;
       if (!uid) { setMsg('Sesión no encontrada'); return; }
 
@@ -29,6 +28,10 @@ export default function Callback() {
       setTimeout(() => router.replace(hasName ? '/dashboard' : '/onboarding'), 600);
     })();
   }, []);
+
+  return <p>{msg}</p>;
+}
+
 
   return <p>{msg}</p>;
 }
