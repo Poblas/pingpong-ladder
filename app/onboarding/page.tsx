@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '../lib/supabaseClient';
 import { useRouter } from 'next/navigation';
+import { getSupabaseClient } from '../../lib/supabaseClient';
 
 export default function Onboarding() {
   const supabase = getSupabaseClient();
@@ -12,14 +12,12 @@ export default function Onboarding() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Cargar sesión y, si ya tiene nombre, mandar al dashboard
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
       const u = data.session?.user;
       if (!u) { router.replace('/'); return; }
       setEmail(u.email ?? null);
-      // buscar perfil
       const { data: prof, error } = await supabase
         .from('profiles')
         .select('display_name')
@@ -35,31 +33,26 @@ export default function Onboarding() {
 
   async function save() {
     setError(null);
-    if (displayName.trim().length < 3) {
-      setError('Elige un nombre de al menos 3 caracteres.');
-      return;
-    }
+    const name = displayName.trim();
+    if (name.length < 3) { setError('Elige un nombre de al menos 3 caracteres.'); return; }
+
     setSaving(true);
     const { data: sess } = await supabase.auth.getSession();
     const uid = sess.session?.user?.id;
     if (!uid) { setError('Sesión no encontrada'); setSaving(false); return; }
 
-    // Valida que no exista ya (opcional)
     const { data: clash } = await supabase
       .from('profiles')
       .select('user_id')
-      .eq('display_name', displayName.trim())
+      .eq('display_name', name)
       .maybeSingle();
-    if (clash) {
-      setError('Ese nombre ya está en uso.');
-      setSaving(false);
-      return;
-    }
+    if (clash) { setError('Ese nombre ya está en uso.'); setSaving(false); return; }
 
     const { error } = await supabase
       .from('profiles')
-      .update({ display_name: displayName.trim() })
+      .update({ display_name: name })
       .eq('user_id', uid);
+
     setSaving(false);
     if (error) setError(error.message);
     else router.replace('/dashboard');
