@@ -1,64 +1,81 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '@/lib/supabaseClient';
+import { useRouter } from 'next/navigation';
+import { getSupabaseClient } from '../../lib/supabaseClient';
 
-export default function Home() {
+export default function Onboarding() {
   const supabase = getSupabaseClient();
-  const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('');
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState('');
+  const [checking, setChecking] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setUserEmail(data.session?.user?.email ?? null);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
-      setUserEmail(sess?.user?.email ?? null);
-    });
-    return () => { sub.subscription.unsubscribe(); };
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const u = data.session?.user;
+      if (!u) { router.replace('/'); return; }
+      setEmail(u.email ?? null);
+      const { data: prof, error } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('user_id', u.id)
+        .maybeSingle();
+      if (!error && prof?.display_name) {
+        router.replace('/dashboard');
+      } else {
+        setChecking(false);
+      }
+    })();
   }, []);
 
-  async function sendMagicLink(e: React.FormEvent) {
-    e.preventDefault();
-    setStatus('Enviando enlace...');
-    const redirectTo = `${window.location.origin}/auth/callback`;
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectTo }
-    });
-    setStatus(error ? `Error: ${error.message}` : 'Revisa tu correo y abre el enlace.');
+  async function save() {
+    setError(null);
+    const name = displayName.trim();
+    if (name.length < 3) { setError('Elige un nombre de al menos 3 caracteres.'); return; }
+
+    setSaving(true);
+    const { data: sess } = await supabase.auth.getSession();
+    const uid = sess.session?.user?.id;
+    if (!uid) { setError('Sesión no encontrada'); setSaving(false); return; }
+
+    // Validar unicidad simple
+    const { data: clash } = await supabase
+      .from('profiles')
+      .select('user_id')
+      .eq('display_name', name)
+      .maybeSingle();
+    if (clash) { setError('Ese nombre ya está en uso.'); setSaving(false); return; }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ display_name: name })
+      .eq('user_id', uid);
+
+    setSaving(false);
+    if (error) setError(error.message);
+    else router.replace('/dashboard');
   }
 
-  async function signOut() {
-    await supabase.auth.signOut();
-  }
+  if (checking) return <p>Cargando…</p>;
 
   return (
-    <main style={{ maxWidth: 520, margin: '0 auto' }}>
-      <h1>PingPong Ladder</h1>
-      {!userEmail ? (
-        <form onSubmit={sendMagicLink} style={{ display: 'grid', gap: 12 }}>
-          <label>
-            Tu email:
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="tucorreo@escuela.mx"
-              style={{ width: '100%', padding: 8 }}
-            />
-          </label>
-          <button type="submit" style={{ padding: '8px 12px' }}>Enviar magic link</button>
-          <p>{status}</p>
-        </form>
-      ) : (
-        <div style={{ display: 'grid', gap: 12 }}>
-          <p>Sesión iniciada como <b>{userEmail}</b></p>
-          <a href="/dashboard">Ir al dashboard</a>
-          <button onClick={signOut} style={{ width: 140, padding: 8 }}>Salir</button>
-        </div>
-      )}
+    <main style={{ maxWidth: 520, margin: '0 auto', display: 'grid', gap: 12 }}>
+      <h1>Elige tu nombre de jugador</h1>
+      <p>Correo: <b>{email}</b></p>
+      <input
+        value={displayName}
+        onChange={(e) => setDisplayName(e.target.value)}
+        placeholder="Ej. JuanPong"
+        style={{ padding: 8 }}
+      />
+      <button onClick={save} disabled={saving} style={{ padding: 8 }}>
+        {saving ? 'Guardando…' : 'Guardar y continuar'}
+      </button>
+      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      <small>Podrás cambiarlo después en tu perfil.</small>
     </main>
   );
 }
