@@ -14,9 +14,9 @@ type MatchRow = {
   created_at: string;
   score1: number;
   score2: number;
-  // Estos alias usan el embed por FK:
-  player1: Player | null; // viene de player1_id -> Profiles
-  player2: Player | null; // viene de player2_id -> Profiles
+  // Supabase retorna relaciones embebidas como arrays
+  player1: Player[] | null;
+  player2: Player[] | null;
 };
 
 export default function PlayerHistoryPage() {
@@ -36,25 +36,18 @@ export default function PlayerHistoryPage() {
     const run = async () => {
       setLoading(true);
 
-      // 1) Cargar el nombre del jugador (opcional, para el título)
-      const { data: prof, error: profErr } = await supabase
+      // 1) Nombre del jugador para el título
+      const { data: prof } = await supabase
         .from('Profiles')
         .select('display_name')
         .eq('id', playerId)
         .maybeSingle();
 
-      if (!profErr && prof && mounted) {
+      if (mounted && prof) {
         setPlayerName(prof.display_name ?? '');
       }
 
-      // 2) Cargar los partidos donde participa (player1 o player2),
-      //    trayendo también los datos de ambos jugadores vía FK-embed.
-      //
-      //    OJO: Esto requiere que existan las FKs:
-      //      Matches.player1_id -> Profiles.id
-      //      Matches.player2_id -> Profiles.id
-      //
-      //    y que haya RLS con SELECT permitido en Matches y Profiles.
+      // 2) Partidos con embeds de ambos jugadores
       const { data, error } = await supabase
         .from('Matches')
         .select(
@@ -71,11 +64,13 @@ export default function PlayerHistoryPage() {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (!error && data && mounted) {
-        setRows(data as MatchRow[]);
+      if (mounted) {
+        if (!error && data) {
+          // Tipado: data trae player1/player2 como arrays
+          setRows(data as unknown as MatchRow[]);
+        }
+        setLoading(false);
       }
-
-      if (mounted) setLoading(false);
     };
 
     run();
@@ -105,9 +100,13 @@ export default function PlayerHistoryPage() {
           </thead>
           <tbody>
             {rows.map((m) => {
-              const p1 = m.player1?.display_name ?? '—';
-              const p2 = m.player2?.display_name ?? '—';
-              const meIsP1 = m.player1?.id === playerId;
+              const p1 = m.player1?.[0];
+              const p2 = m.player2?.[0];
+
+              const p1Name = p1?.display_name ?? '—';
+              const p2Name = p2?.display_name ?? '—';
+
+              const meIsP1 = p1?.id === playerId;
               const myGoals = meIsP1 ? m.score1 : m.score2;
               const oppGoals = meIsP1 ? m.score2 : m.score1;
               const outcome =
@@ -118,8 +117,8 @@ export default function PlayerHistoryPage() {
                   <td style={{ padding: 8 }}>
                     {new Date(m.created_at).toLocaleString()}
                   </td>
-                  <td style={{ padding: 8 }}>{p1}</td>
-                  <td style={{ padding: 8 }}>{p2}</td>
+                  <td style={{ padding: 8 }}>{p1Name}</td>
+                  <td style={{ padding: 8 }}>{p2Name}</td>
                   <td style={{ padding: 8, textAlign: 'center' }}>
                     {m.score1} — {m.score2}
                   </td>
