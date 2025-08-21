@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseClient } from '@/lib/supabaseClient';
-import { calculateEloWithAntiFarm } from '@/lib/elo';
+import { calculateEloWithAntiFarm, calculateOpponentEloWithAntiFarm } from '@/lib/elo';
 
 type Player = { id: string; display_name: string; rating?: number };
 
@@ -80,22 +80,17 @@ export default function NewMatchPage() {
       const winner = playersData.find(p => p.id === winnerId)!;
       const loser = playersData.find(p => p.id === loserId)!;
 
-      // historial de hoy contra el mismo rival (para antifarmeo)
-      const { data: sameDayMatches } = await supabase
-        .from('Matches')
-        .select('id, winner_id, loser_id, created_at')
-        .gte('created_at', new Date(new Date().setHours(0,0,0,0)).toISOString())
-        .eq('player1_id', p1)
-        .eq('player2_id', p2);
-
-      const { newWinnerRating, newLoserRating } = calculateEloWithAntiFarm({
-        winnerRating: winner.rating,
-        loserRating: loser.rating,
-        winnerId,
-        loserId,
-        date: new Date(),
-        previousMatches: sameDayMatches ?? []
-      });
+      // nuevos ratings con función antifarmeo
+      const newWinnerRating = calculateEloWithAntiFarm(
+        winner.rating ?? 1000,
+        loser.rating ?? 1000,
+        1
+      );
+      const newLoserRating = calculateOpponentEloWithAntiFarm(
+        loser.rating ?? 1000,
+        winner.rating ?? 1000,
+        1
+      );
 
       // guardar partido
       const { error: matchErr } = await supabase.from('Matches').insert({
