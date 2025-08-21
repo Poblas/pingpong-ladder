@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseClient } from '@/lib/supabaseClient';
-import { calculateEloWithAntiFarm, calculateOpponentEloWithAntiFarm } from '@/lib/elo';
 
-type Player = { id: string; display_name: string; rating?: number };
+type Player = { id: string; display_name: string };
 
 export default function NewMatchPage() {
   const supabase = getSupabaseClient();
@@ -14,8 +13,8 @@ export default function NewMatchPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [me, setMe] = useState<Player | null>(null);
 
-  const [p1, setP1] = useState('');
-  const [p2, setP2] = useState('');
+  const [p1, setP1] = useState(''); // jugador 1
+  const [p2, setP2] = useState(''); // jugador 2
   const [s1, setS1] = useState('7');
   const [s2, setS2] = useState('0');
 
@@ -25,30 +24,42 @@ export default function NewMatchPage() {
 
   useEffect(() => {
     (async () => {
+      // Debe haber sesión
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace('/'); return; }
 
+      // Mi perfil (para preseleccionarme)
       const { data: myProf } = await supabase
         .from('Profiles')
         .select('id, display_name')
         .eq('user_id', user.id)
         .maybeSingle();
+
       if (myProf) {
         setMe(myProf as Player);
         setP1((myProf as Player).id);
       }
 
-      const { data } = await supabase
+      // Todos los perfiles (¡sin pedir "rating"!)
+      const { data, error } = await supabase
         .from('Profiles')
-        .select('id, display_name, rating')
+        .select('id, display_name')
         .order('display_name');
-      setPlayers((data ?? []) as Player[]);
+
+      if (error) {
+        console.error(error);
+        setErr(error.message);
+      } else {
+        setPlayers((data ?? []) as Player[]);
+      }
+
       setLoading(false);
     })();
-  }, []);
+  }, [router, supabase]);
 
   const haveTwoPlayers = players.length >= 2;
 
+  // El marcador debe ser 7–0..6
   const validScores = useMemo(() => {
     const a = Number(s1), b = Number(s2);
     const isInt = Number.isInteger(a) && Number.isInteger(b);
@@ -64,54 +75,22 @@ export default function NewMatchPage() {
     if (!validScores) { setErr('Marcador inválido. Debe ser 7–0..6.'); return; }
 
     const a = Number(s1), b = Number(s2);
-    const winnerId = a > b ? p1 : p2;
-    const loserId = a > b ? p2 : p1;
+    const winner = a > b ? p1 : p2;
 
     setSaving(true);
+    const { error } = await supabase.from('Matches').insert({
+      player1_id: p1,
+      player2_id: p2,
+      score1: a,
+      score2: b,
+      winner_id: winner,
+    });
+    setSaving(false);
 
-    try {
-      // ratings actuales
-      const { data: playersData, error: playersErr } = await supabase
-        .from('Profiles')
-        .select('id, rating')
-        .in('id', [winnerId, loserId]);
-      if (playersErr || !playersData) throw new Error(playersErr?.message || 'Error cargando ratings.');
+    if (error) { setErr(error.message); return; }
 
-      const winner = playersData.find(p => p.id === winnerId)!;
-      const loser = playersData.find(p => p.id === loserId)!;
-
-      // nuevos ratings con función antifarmeo
-      const newWinnerRating = calculateEloWithAntiFarm(
-        winner.rating ?? 1000,
-        loser.rating ?? 1000,
-        1
-      );
-      const newLoserRating = calculateOpponentEloWithAntiFarm(
-        loser.rating ?? 1000,
-        winner.rating ?? 1000,
-        1
-      );
-
-      // guardar partido
-      const { error: matchErr } = await supabase.from('Matches').insert({
-        player1_id: p1,
-        player2_id: p2,
-        score1: a,
-        score2: b,
-        winner_id: winnerId,
-      });
-      if (matchErr) throw new Error(matchErr.message);
-
-      // actualizar ratings
-      await supabase.from('Profiles').update({ rating: newWinnerRating }).eq('id', winnerId);
-      await supabase.from('Profiles').update({ rating: newLoserRating }).eq('id', loserId);
-
-      router.replace('/dashboard');
-    } catch (e: any) {
-      setErr(e.message);
-    } finally {
-      setSaving(false);
-    }
+    // El trigger en la base recalcula ELO/Ratings/Leaderboard
+    router.replace('/dashboard');
   };
 
   if (loading) return <main style={{ padding: 24 }}>Cargando…</main>;
@@ -139,9 +118,11 @@ export default function NewMatchPage() {
           <label>Jugador 2</label>
           <select value={p2} onChange={(e) => setP2(e.target.value)}>
             <option value="">— Elegir —</option>
-            {players.filter(pl => pl.id !== p1).map(pl => (
-              <option key={pl.id} value={pl.id}>{pl.display_name}</option>
-            ))}
+            {players
+              .filter(pl => pl.id !== p1)
+              .map(pl => (
+                <option key={pl.id} value={pl.id}>{pl.display_name}</option>
+              ))}
           </select>
 
           <label>Marcador (a 7)</label>
